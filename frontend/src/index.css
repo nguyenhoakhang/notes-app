@@ -1196,3 +1196,112 @@ body {
   outline: none;
   border-color: var(--primary);
 }
+
+.offline-banner {
+  background: #1e293b;
+  color: #f8fafc;
+  text-align: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.01em;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+/* Snappy interactive feedback */
+.note-card {
+  transition: box-shadow 0.12s, transform 0.12s;
+}
+
+.note-card:hover {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+.note-card:active {
+  transform: translateY(0);
+}
+
+.note-card-actions button {
+  transition: color 0.1s, background 0.1s, transform 0.1s;
+  border-radius: 4px;
+  padding: 4px;
+}
+
+.note-card-actions button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.note-card-actions button:active {
+  transform: scale(0.88);
+}
+
+.btn-primary-sm {
+  transition: background 0.12s, transform 0.1s;
+}
+
+.btn-primary-sm:active {
+  transform: scale(0.96);
+}
+
+@keyframes pin-pop {
+  0% {
+    transform: scale(1);
+  }
+
+  40% {
+    transform: scale(1.35);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.icon-pin {
+  animation: pin-pop 0.25s ease;
+}
+.search-wrap {
+  position: relative;
+  flex: 1;
+  max-width: 480px;
+  display: flex;
+  align-items: center;
+}
+
+.search-wrap .search-input {
+  width: 100%;
+  padding-right: 2rem;
+}
+
+.search-clear {
+  position: absolute;
+  right: 0.6rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 2px 4px;
+}
+
+.search-clear:hover {
+  color: var(--text);
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.search-spinner {
+  position: absolute;
+  right: 0.65rem;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import api from "../api/axios";
 import useAuthStore from "../store/authStore";
 import useDebounce from "../hooks/useDebounce";
@@ -10,6 +10,17 @@ import NoteGrid from "../components/notes/NoteGrid";
 import NoteEditor from "../components/notes/NoteEditor";
 import DeleteConfirmModal from "../components/notes/DeleteConfirmModal";
 import UnverifiedBanner from "../components/UnverifiedBanner";
+import {
+  fetchNotes,
+  fetchLabels,
+  createNote,
+  updateNote,
+  deleteNote,
+  pinNote,
+} from "../api/offlineApi";
+import useOnlineStatus from "../hooks/useOnlineStatus";
+import useSyncQueue from "../hooks/useSyncQueue";
+import OfflineBanner from "../components/OfflineBanner";
 
 export default function NotesPage() {
   const { user, updateUser } = useAuthStore();
@@ -26,12 +37,78 @@ export default function NotesPage() {
 
   const [editingNote, setEditingNote] = useState(null);
   const [deletingNote, setDeletingNote] = useState(null);
-  const [creating, setCreating] = useState(false);
-
+  const [creatingOpen, setCreatingOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [theme, setTheme] = useState(user?.theme || "light");
-
+  const pinningRef = useRef(new Set());
   const debouncedSearch = useDebounce(search, 300);
+  const online = useOnlineStatus();
+  const { syncAll } = useSyncQueue(online);
+  const handleCreatorClose = () => {
+    setCreatingOpen(false);
+    setNotes((prev) =>
+      prev.filter(
+        (n) =>
+          !String(n.id).startsWith("temp_") ||
+          n.title?.trim() ||
+          n.content?.trim(),
+      ),
+    );
+  };
+  const handlePin = async (note) => {
+    if (pinningRef.current.has(note.id)) return;
+    pinningRef.current.add(note.id);
 
+    // Optimistic update
+    setNotes((prev) =>
+      prev.map((n) =>
+        n.id === note.id
+          ? {
+              ...n,
+              is_pinned: !n.is_pinned,
+              pinned_at: new Date().toISOString(),
+            }
+          : n,
+      ),
+    );
+
+    try {
+      const updated = await pinNote(note.id);
+      if (updated) {
+        setNotes((prev) =>
+          prev.map((n) => (n.id === note.id ? { ...n, ...updated } : n)),
+        );
+      }
+    } catch {
+      setNotes((prev) =>
+        prev.map((n) =>
+          n.id === note.id
+            ? { ...n, is_pinned: note.is_pinned, pinned_at: note.pinned_at }
+            : n,
+        ),
+      );
+      toast.error("Pin failed");
+    } finally {
+      pinningRef.current.delete(note.id);
+    }
+  };
+  const displayedNotes = useMemo(() => {
+    if (activeSection === "shared") {
+      return shared.map((s) => ({
+        ...s.note,
+        _sharedBy: s.shared_by,
+        _permission: s.permission,
+      }));
+    }
+    if (!search.trim()) return notes;
+
+    const q = search.toLowerCase();
+    return notes.filter(
+      (n) =>
+        n.title?.toLowerCase().includes(q) ||
+        n.content?.toLowerCase().includes(q),
+    );
+  }, [notes, shared, search, activeSection]);
   // Apply theme
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -52,22 +129,29 @@ export default function NotesPage() {
 
   // Load notes
   useEffect(() => {
-    fetchNotes();
+    fetchNotesData();
+    fetchLabelsData();
     fetchShared();
-    fetchLabels();
   }, []);
 
   // Search / filter
   useEffect(() => {
-    fetchNotes();
+    if (!debouncedSearch.trim()) {
+      setSearching(false);
+      fetchNotesData();
+      return;
+    }
+    setSearching(true);
+    fetchNotesData().finally(() => setSearching(false));
   }, [debouncedSearch, activeLabel]);
 
-  const fetchNotes = async () => {
+  // Tìm hàm fetchNotes cũ và thay bằng:
+  const fetchNotesData = async () => {
     try {
       const params = {};
       if (debouncedSearch) params.search = debouncedSearch;
       if (activeLabel) params.label_id = activeLabel;
-      const { data } = await api.get("/notes", { params });
+      const data = await fetchNotes(params);
       setNotes(data);
     } catch {
       toast.error("Failed to load notes");
@@ -83,11 +167,9 @@ export default function NotesPage() {
     } catch {}
   };
 
-  const fetchLabels = async () => {
-    try {
-      const { data } = await api.get("/labels");
-      setLabels(data);
-    } catch {}
+  const fetchLabelsData = async () => {
+    const data = await fetchLabels();
+    setLabels(data);
   };
 
   // Note saved from editor (create or update)
@@ -100,28 +182,12 @@ export default function NotesPage() {
     });
   };
 
-  const handlePin = async (note) => {
-    try {
-      const { data } = await api.post(`/notes/${note.id}/pin`);
-      setNotes((prev) =>
-        prev.map((n) => (n.id === note.id ? { ...n, ...data } : n)),
-      );
-    } catch {
-      toast.error("Failed to pin");
-    }
-  };
-
   const handleDelete = async () => {
-    try {
-      await api.delete(`/notes/${deletingNote.id}`);
-      setNotes((prev) => prev.filter((n) => n.id !== deletingNote.id));
-      setDeletingNote(null);
-      toast.success("Note deleted");
-    } catch {
-      toast.error("Failed to delete");
-    }
+    await deleteNote(deletingNote.id);
+    setNotes((prev) => prev.filter((n) => n.id !== deletingNote.id));
+    setDeletingNote(null);
+    toast.success("Note deleted");
   };
-
   const displayNotes =
     activeSection === "shared"
       ? shared.map((s) => ({
@@ -135,7 +201,7 @@ export default function NotesPage() {
   return (
     <div className="app-layout" data-theme={theme}>
       {user && !user.email_verified_at && <UnverifiedBanner />}
-
+      <OfflineBanner online={online} />
       <Navbar
         search={search}
         setSearch={setSearch}
@@ -167,7 +233,7 @@ export default function NotesPage() {
             {activeSection === "notes" && (
               <button
                 className="btn-primary-sm"
-                onClick={() => setCreating(true)}
+                onClick={() => setCreatingOpen(true)}
               >
                 + New Note
               </button>
@@ -182,7 +248,7 @@ export default function NotesPage() {
             </div>
           ) : (
             <NoteGrid
-              notes={displayNotes}
+              notes={displayedNotes}
               view={view}
               onEdit={setEditingNote}
               onDelete={setDeletingNote}
@@ -193,12 +259,12 @@ export default function NotesPage() {
       </div>
 
       {/* New note editor */}
-      {creating && (
+      {creatingOpen && (
         <NoteEditor
           note={null}
           labels={labels}
           onSave={handleSave}
-          onClose={() => setCreating(false)}
+          onClose={handleCreatorClose}
         />
       )}
 

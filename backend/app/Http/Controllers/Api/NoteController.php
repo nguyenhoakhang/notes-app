@@ -192,12 +192,12 @@ class NoteController extends Controller
     }
 
     // DELETE /api/notes/{id}/share/{share_id}
-    public function revokeShare(Request $request, Note $note, $shareId)
+    public function revokeShare(Note $note, $shareId)
     {
-        $this->authorizeNote($note, $request->user(), 'owner');
-
-        $note->shares()->findOrFail($shareId)->delete();
-        return response()->json(['message' => 'Access revoked']);
+        $share = $note->shares()->findOrFail($shareId);
+        $this->authorize('delete', $share);
+        $share->delete();
+        return response()->json(['message' => 'Revoked']);
     }
 
     // PATCH /api/notes/{id}/share/{share_id}

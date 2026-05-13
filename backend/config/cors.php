@@ -1,9 +1,10 @@
 <?php
 
 return [
-    'paths' => ['api/*', 'sanctum/csrf-cookie'],
-    'allowed_origins' => ['http://localhost:8080', 'http://localhost:5173'],  // THÊM localhost:5173
+    'paths' => ['api/*', 'sanctum/csrf-cookie', 'login', 'register', 'logout', 'me'],
     'allowed_methods' => ['*'],
+    'allowed_origins' => ['http://localhost:5173', 'http://localhost:8080'],
+    'allowed_origins_patterns' => [],
     'allowed_headers' => ['*'],
     'exposed_headers' => [],
     'max_age' => 0,

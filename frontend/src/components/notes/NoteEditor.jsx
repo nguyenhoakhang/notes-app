@@ -6,6 +6,7 @@ import ShareModal from "./ShareModal";
 import NotePasswordModal from "./NotePasswordModal";
 import useCollabEditor from "../../hooks/useCollabEditor";
 import useAuthStore from "../../store/authStore";
+import { createNote, updateNote } from "../../api/offlineApi";
 
 const COLORS = [
   "#ffffff",
@@ -36,6 +37,7 @@ export default function NoteEditor({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [noteId, setNoteId] = useState(note?.id || null);
+  const [dirty, setDirty] = useState(false);
 
   // Password unlock state
   const [locked, setLocked] = useState(note?.is_protected || false);
@@ -45,7 +47,8 @@ export default function NoteEditor({
   // Attachments
   const [attachments, setAttachments] = useState(note?.attachments || []);
   const fileRef = useRef();
-
+  const lastSavedRef = useRef(form); // track what was last saved
+  const isSavingRef = useRef(false);
   const [showShare, setShowShare] = useState(false);
   const [showNotePass, setShowNotePass] = useState(false);
   const [noteData, setNoteData] = useState(note);
@@ -53,8 +56,8 @@ export default function NoteEditor({
   const token = localStorage.getItem("token");
 
   // Collab is active when: note exists, not read-only, and not locked
-  const collabEnabled = !isNew && !readOnly && !locked;
-
+  const collabEnabled = false;
+  // !isNew && !readOnly && !locked;
   const { bindTextarea, status, users } = useCollabEditor({
     noteId: noteId,
     userId: user?.id,
@@ -69,37 +72,84 @@ export default function NoteEditor({
     async (data, id) => {
       setSaving(true);
       try {
-        let res;
+        let saved;
         if (!id) {
-          res = await api.post("/notes", data);
-          setNoteId(res.data.id);
-          id = res.data.id;
+          saved = await createNote(data);
+          setNoteId(saved.id);
         } else {
-          res = await api.put(`/notes/${id}`, data);
+          saved = await updateNote(id, data);
         }
         setSaved(true);
         setTimeout(() => setSaved(false), 2000);
-        onSave(res.data);
-        return id;
+        onSave(saved);
+        return saved?.id;
       } catch {
-        toast.error("Auto-save failed");
+        toast.error("Save failed");
       } finally {
         setSaving(false);
       }
     },
     [onSave],
   );
+  const saveNow = useCallback(
+    async (data, id) => {
+      if (isSavingRef.current) return;
+      // Don't save empty new notes
+      if (!id && !data.title?.trim() && !data.content?.trim()) return;
 
+      isSavingRef.current = true;
+      setSaving(true);
+      try {
+        let saved;
+        if (!id) {
+          saved = await createNote(data);
+          setNoteId(saved.id);
+          id = saved.id;
+        } else {
+          saved = await updateNote(id, data);
+        }
+        lastSavedRef.current = data;
+        setDirty(false);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        onSave(saved);
+        return id;
+      } catch {
+        toast.error("Save failed");
+      } finally {
+        setSaving(false);
+        isSavingRef.current = false;
+      }
+    },
+    [onSave],
+  );
   // Trigger auto-save on change
+  // Debounced autosave — 1.5s after typing stops
   useEffect(() => {
     if (readOnly || locked) return;
+    const hasChanges =
+      form.title !== lastSavedRef.current.title ||
+      form.content !== lastSavedRef.current.content ||
+      form.color !== lastSavedRef.current.color ||
+      JSON.stringify(form.label_ids) !==
+        JSON.stringify(lastSavedRef.current.label_ids);
+
+    if (!hasChanges) return;
+    setDirty(true);
     clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => autoSave(form, noteId), AUTOSAVE_DELAY);
+    timerRef.current = setTimeout(() => saveNow(form, noteId), 1500);
     return () => clearTimeout(timerRef.current);
   }, [form]);
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
 
+  const handleClose = async () => {
+    clearTimeout(timerRef.current);
+    if (dirty && !readOnly && !locked) {
+      await saveNow(form, noteId);
+    }
+    onClose();
+  };
   const toggleLabel = (id) => {
     set(
       "label_ids",
@@ -157,7 +207,7 @@ export default function NoteEditor({
 
   if (locked)
     return (
-      <div className="modal-overlay" onClick={onClose}>
+      <div className="modal-overlay" onClick={handleClose}>
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <h3>🔒 This note is password protected</h3>
           <div className="form-group" style={{ marginTop: "1rem" }}>
@@ -171,7 +221,7 @@ export default function NoteEditor({
             />
           </div>
           <div className="modal-actions">
-            <button className="btn-secondary" onClick={onClose}>
+            <button className="btn-secondary" onClick={handleClose}>
               Cancel
             </button>
             <button
@@ -186,7 +236,7 @@ export default function NoteEditor({
       </div>
     );
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" onClick={handleClose}>
       <div className="note-editor" onClick={(e) => e.stopPropagation()}>
         {/* Header */}
         <div className="editor-header">
@@ -219,7 +269,7 @@ export default function NoteEditor({
                 </button>
               </>
             )}
-            <button onClick={onClose}>
+            <button onClick={handleClose}>
               <X size={18} />
             </button>
           </div>
@@ -305,13 +355,13 @@ export default function NoteEditor({
               <div key={att.id} className="attachment-item">
                 {att.mime_type?.startsWith("image/") ? (
                   <img
-                    src={`/storage/${att.path}`}
+                    src={`http://localhost:8080/storage/${att.path}`}
                     alt={att.filename}
                     className="attachment-thumb"
                   />
                 ) : (
                   <a
-                    href={`/storage/${att.path}`}
+                    href={`http://localhost:8080/storage/${att.path}`}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

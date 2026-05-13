@@ -58,7 +58,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Sharing
     Route::post('/notes/{note}/share',             [NoteController::class, 'share']);
-    Route::delete('/notes/{note}/share/{shareId}', [NoteController::class, 'revokeShare']);
+    Route::delete('/notes/{note}/share/{share}', [NoteController::class, 'revokeShare']);
     Route::patch('/notes/{note}/share/{shareId}',  [NoteController::class, 'updateShare']);
 
     // Labels
