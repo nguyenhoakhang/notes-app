@@ -1,0 +1,9 @@
+{
+  "name": "hocuspocus-server",
+  "version": "1.0.0",
+  "type": "module",
+  "dependencies": {
+    "@hocuspocus/server": "^2.13.0",
+    "ws": "^8.16.0"
+  }
+}
